@@ -22,8 +22,7 @@
 #include <stddef.h>
 #include <sys/queue.h>
 
-// gcc curr_inotify.c -lpthread
-// gcc inotify_full.c -lpthread
+// gcc inotify2.c -lpthread
 
 #define MAX_DIR_PATH 512
 
@@ -140,8 +139,6 @@ static void handle_inotify_events(int fd)
              ptr += sizeof(struct inotify_event) + event->len) {
             event = (const struct inotify_event *)ptr;
 
-            printf("\t\t\tevent->len = %u\n", event->len);
-
             if (event->mask & IN_CREATE
              && event->mask & IN_ISDIR) {
                 struct dir_path_s *np = NULL;
@@ -206,7 +203,7 @@ static void *dir_space_notify(void *arg)
         { .fd = -1, .events = POLLIN }
     };
     int fd __attribute__ ((__cleanup__(clean_up_close))) = -1;
-    struct dir_path_s *ptr __attribute__ ((__cleanup__(clean_up_free))) = NULL;
+    struct dir_path_s *ptr = NULL;
     (void)arg;
 
     TAILQ_INIT(&head);
@@ -267,6 +264,6 @@ int main()
         return -1;
     }
     pthread_detach(tid);
-    sleep(1000);
+    sleep(120);
     return 0;
 }
