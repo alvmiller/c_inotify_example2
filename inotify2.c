@@ -25,6 +25,7 @@
 // gcc inotify2.c -lpthread
 
 #define MAX_DIR_PATH 512
+const char *COMMON_BASE_DIR = "/home/user1/dev/inotify_full";
 
 struct dir_path_s {
     char path[MAX_DIR_PATH];
@@ -139,57 +140,53 @@ static void handle_inotify_events(int fd)
              ptr += sizeof(struct inotify_event) + event->len) {
             event = (const struct inotify_event *)ptr;
 
-            if (event->mask & IN_CREATE
-             && event->mask & IN_ISDIR) {
-                struct dir_path_s *np = NULL;
-                TAILQ_FOREACH(np, &head, dir_paths) {
-                    if (np->wd == event->wd) {
-                        char local_path[MAX_DIR_PATH] = {};
-                        int ret = snprintf(local_path, sizeof(local_path), "%s/%s",
-                                           np->path, event->name);
-                        if (ret < 0 || ret >= sizeof(local_path)) {
-                            printf("\t\tERROR: Cannot get name of dir\n");
-                            return;
-                        }
-
-                        int try_ret = try_to_watch(fd, local_path);
-                        if (try_ret != 0) {
-                            return;
-                        }
-                        break;
-                    }
-                }
-            }
-
-            if (event->mask & IN_DELETE
-             || event->mask & IN_DELETE_SELF
-             || event->mask & IN_MOVED_FROM
-             || event->mask & IN_MOVED_TO
-             || event->mask & IN_MODIFY) {
-                if ((event->mask & IN_DELETE || event->mask & IN_DELETE_SELF)
+            if (event->len != 0) {
+                if (event->mask & IN_CREATE
                  && event->mask & IN_ISDIR) {
-                    struct dir_path_s *n2 = NULL;
-                    TAILQ_FOREACH(n2, &head, dir_paths) {
-                        if (n2->wd == event->wd) {
-                            printf("\t\tTry RM: %s\n", n2->path);
-                            int rm_ret = inotify_rm_watch(fd, event->wd);
-                            if (rm_ret != 0) {
-                                printf("\tERROR: Can't rm wd: %d\n", rm_ret);
+                    struct dir_path_s *np = NULL;
+                    TAILQ_FOREACH(np, &head, dir_paths) {
+                        if (np->wd == event->wd) {
+                            char local_path[MAX_DIR_PATH] = {};
+                            int ret = snprintf(local_path, sizeof(local_path), "%s/%s",
+                                               np->path, event->name);
+                            if (ret < 0 || ret >= sizeof(local_path)) {
+                                printf("\t\tERROR: Cannot get name of dir\n");
                                 return;
                             }
-                            TAILQ_REMOVE(&head, n2, dir_paths);
-                            free(n2);
+
+                            int try_ret = try_to_watch(fd, local_path);
+                            if (try_ret != 0) {
+                                return;
+                            }
                             break;
                         }
                     }
-                }
+                } // created
 
-                if (event->len != 0) {
+                const uint32_t changes_mask = IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY;
+                if (event->mask & changes_mask) {
+                    if ((event->mask & IN_DELETE || event->mask & IN_DELETE_SELF)
+                     && event->mask & IN_ISDIR) {
+                        struct dir_path_s *n2 = NULL;
+                        TAILQ_FOREACH(n2, &head, dir_paths) {
+                            if (n2->wd == event->wd) {
+                                printf("\t\tTry RM: %s\n", n2->path);
+                                int rm_ret = inotify_rm_watch(fd, event->wd);
+                                if (rm_ret != 0) {
+                                    printf("\tERROR: Can't rm wd: %d\n", rm_ret);
+                                    return;
+                                }
+                                TAILQ_REMOVE(&head, n2, dir_paths);
+                                free(n2);
+                                break;
+                            }
+                        }
+                    }
                     printf("!!!CAN APPLY ALG HERE!!!\n");
-                }
-            }
-        }
-    }
+                } // changed
+            } // event->len
+        } // for
+    } // for(;;)
 
     return;
 }
@@ -197,7 +194,7 @@ static void handle_inotify_events(int fd)
 static void *dir_space_notify(void *arg)
 {
 #define NUM_OF_DIRECTORIES 1
-    const char *base_dir = "/home/user1/dev/inotify_full";
+    const char *base_dir = COMMON_BASE_DIR;
     const nfds_t nfds = 1;
     struct pollfd fds[1] = {
         { .fd = -1, .events = POLLIN }
